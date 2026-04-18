@@ -5,6 +5,22 @@ evaluation (MMLU, GSM8K, HumanEval) with a Streamlit dashboard.
 
 ---
 
+## Dashboard
+
+### Overview — KPIs & Performance Charts
+![Dashboard Overview](docs/images/dashboard_overview.png)
+
+### Throughput / Latency Tradeoff
+![Tradeoff Scatter](docs/images/dashboard_charts.png)
+
+### Quality Metrics
+![Quality Metrics](docs/images/dashboard_scatter.png)
+
+> **Benchmark results above** — `Qwen/Qwen2.5-7B-Instruct` on RTX 5090, concurrency 1→50.
+> Peak throughput: **2,907 TPS** at concurrency 50. Quality: MMLU **100%**, HumanEval **100%**, GSM8K **50%**.
+
+---
+
 ## Project structure
 
 ```
@@ -17,6 +33,7 @@ evaluation (MMLU, GSM8K, HumanEval) with a Streamlit dashboard.
 ├── dashboard/
 │   ├── app.py              # Streamlit dashboard
 │   └── data_store.py       # Parquet/CSV persistence layer
+├── docs/images/            # Dashboard screenshots
 ├── data/                   # Auto-created; stores .parquet + .csv results
 ├── main.py                 # Pipeline entry point (CLI)
 └── requirements.txt
@@ -45,10 +62,14 @@ streamlit run dashboard/app.py
 **Start vLLM:**
 
 ```bash
-# Single GPU
+# Qwen2.5-7B (RTX 5090 — use FlashInfer backend)
+vllm serve Qwen/Qwen2.5-7B-Instruct \
+  --host 0.0.0.0 --port 8000 \
+  --attention-backend FLASHINFER
+
+# Llama single GPU
 vllm serve meta-llama/Llama-3.1-8B-Instruct \
-  --port 8000 \
-  --api-key token-abc123
+  --port 8000
 
 # Multi-GPU (tensor parallelism)
 vllm serve meta-llama/Llama-3.1-70B-Instruct \
@@ -61,10 +82,10 @@ vllm serve meta-llama/Llama-3.1-70B-Instruct \
 ```bash
 # Full pipeline (load test + quality eval)
 python main.py \
-  --model meta-llama/Llama-3.1-8B-Instruct \
+  --model Qwen/Qwen2.5-7B-Instruct \
   --base-url http://localhost:8000 \
   --concurrency 1,5,10,20,50 \
-  --num-requests 100
+  --num-requests 50
 
 # Load test only
 python main.py --no-eval
@@ -73,13 +94,18 @@ python main.py --no-eval
 python main.py --no-bench --eval-datasets mmlu,gsm8k
 
 # Clear previous results and re-run
-python main.py --clear --demo
+python main.py --clear
 ```
 
 **Launch dashboard:**
 
 ```bash
-streamlit run dashboard/app.py
+streamlit run dashboard/app.py \
+  --server.address 0.0.0.0 \
+  --server.port 8501 \
+  --server.fileWatcherType none \
+  --server.enableCORS false \
+  --server.enableXsrfProtection false
 # → open http://localhost:8501
 ```
 
@@ -89,11 +115,11 @@ streamlit run dashboard/app.py
 
 | Concurrency | RPS | TPS | TTFT avg | Latency p95 |
 |---|---|---|---|---|
-| 1 | 0.41 | 101 | 25 ms | 2,468 ms |
-| 5 | 2.00 | 496 | 43 ms | 2,512 ms |
-| 10 | 3.70 | 917 | 53 ms | 2,710 ms |
-| 20 | 5.93 | 1,474 | 85 ms | 2,881 ms |
-| 50 | 11.71 | 2,907 | 160 ms | 4,263 ms |
+| 1 | 0.41 | 101 | 25 ms | — |
+| 5 | 2.00 | 496 | 43 ms | — |
+| 10 | 3.70 | 917 | 53 ms | — |
+| 20 | 5.93 | 1,474 | 85 ms | — |
+| 50 | 11.71 | 2,907 | 160 ms | 4,256 ms |
 
 **Quality evaluation:**
 
@@ -136,9 +162,9 @@ relative model comparisons.
 ## Dashboard sections
 
 1. **Overview KPIs** — RPS, TPS, TTFT avg/p95, ITL, latency p95
-2. **Performance Graphs** — TPS/TTFT vs concurrency, RPS bar chart
-3. **Quality Metrics** — accuracy/exact-match/pass@1 per dataset
-4. **Tradeoff Scatter** — TPS vs TTFT (bubble = concurrency level)
+2. **Performance Graphs** — TPS/TTFT vs concurrency
+3. **Tradeoff Scatter** — TPS vs TTFT (bubble = concurrency level)
+4. **Quality Metrics** — accuracy/exact-match/pass@1 per dataset
 5. **Raw Data** — filterable tables + CSV download
 
 ---
