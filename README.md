@@ -16,8 +16,8 @@ evaluation (MMLU, GSM8K, HumanEval) with a Streamlit dashboard.
 ### Quality Metrics
 ![Quality Metrics](docs/images/dashboard_scatter.png)
 
-> **Benchmark results above** — `Qwen/Qwen2.5-7B-Instruct` on RTX 5090, concurrency 1→50.
-> Peak throughput: **2,907 TPS** at concurrency 50. Quality: MMLU **100%**, HumanEval **100%**, GSM8K **50%**.
+> **Benchmark results above** — `Qwen/Qwen2.5-7B-Instruct` on RTX 5090.
+> GPU ceiling: **~5,650 TPS** (queue-saturated). Practical saturation: **~2,917 TPS** at c=64. Quality: MMLU **100%**, HumanEval **100%**, GSM8K **50%**.
 
 ---
 
@@ -113,21 +113,52 @@ streamlit run dashboard/app.py \
 
 ## Benchmark results — Qwen/Qwen2.5-7B-Instruct (RTX 5090)
 
-| Concurrency | RPS | TPS | TTFT avg | Latency p95 |
-|---|---|---|---|---|
-| 1 | 0.41 | 101 | 25 ms | 2,468 ms |
-| 5 | 2.00 | 496 | 43 ms | 2,512 ms |
-| 10 | 3.70 | 917 | 53 ms | 2,710 ms |
-| 20 | 5.93 | 1,474 | 85 ms | 2,881 ms |
-| 50 | 11.71 | 2,907 | 160 ms | 4,263 ms |
+Three test suites were run against a live vLLM server with `--attention-backend FLASHINFER`.
 
-**Quality evaluation:**
+### Baseline sweep (concurrency 1 → 50, 50 req each)
 
-| Dataset | Metric | Score |
-|---|---|---|
-| MMLU | Accuracy | 100% |
-| GSM8K | Exact Match | 50% |
-| HumanEval | pass@1 | 100% |
+| Concurrency | RPS | TPS | TTFT avg | TTFT p95 | ITL avg | Latency p95 |
+|---|---|---|---|---|---|---|
+| 1 | 0.41 | 101 | 25 ms | 31 ms | 9.9 ms | 2,468 ms |
+| 5 | 2.00 | 496 | 43 ms | 53 ms | 10.0 ms | 2,512 ms |
+| 10 | 3.70 | 917 | 53 ms | 64 ms | 10.7 ms | 2,710 ms |
+| 20 | 5.93 | 1,474 | 85 ms | 109 ms | 11.1 ms | 2,881 ms |
+| 50 | 11.71 | 2,907 | 160 ms | 170 ms | 16.6 ms | 4,263 ms |
+
+### Fine-grained sweep — finding the saturation point (concurrency 1 → 128, 50 req each)
+
+| Concurrency | RPS | TPS | TTFT avg | TTFT p95 | Latency p95 |
+|---|---|---|---|---|---|
+| 1 | 0.41 | 101 | 24 ms | 30 ms | 2,467 ms |
+| 2 | 0.81 | 201 | 30 ms | 32 ms | 2,475 ms |
+| 4 | 1.54 | 383 | 39 ms | 44 ms | 2,495 ms |
+| 8 | 2.85 | 708 | 48 ms | 65 ms | 2,530 ms |
+| 16 | 4.71 | 1,169 | 72 ms | 82 ms | 2,732 ms |
+| 32 | 8.70 | 2,158 | 103 ms | 121 ms | 2,909 ms |
+| **64** | **11.74** | **2,917** | **146 ms** | **163 ms** | **4,255 ms** |
+| 128 | 11.61 | 2,882 | 185 ms | 195 ms | 4,300 ms |
+
+> **Saturation point: c=64 (~2,917 TPS).** Adding more users yields no throughput gain — the GPU is fully utilised. Marginal TPS actually regresses at c=128 as queue overhead grows.
+
+### Overload test — vLLM robustness under extreme load (concurrency 100 → 500, 100 req each)
+
+| Concurrency | RPS | TPS | TTFT avg | TTFT p95 | Latency p95 | Errors |
+|---|---|---|---|---|---|---|
+| 100 | 22.3 | 5,550 | 264 ms | 294 ms | 4,463 ms | 0 |
+| 150 | 22.5 | 5,590 | 249 ms | 277 ms | 4,434 ms | 0 |
+| 200 | 22.3 | 5,529 | 244 ms | 272 ms | 4,471 ms | 0 |
+| 300 | 22.5 | 5,584 | 227 ms | 262 ms | 4,442 ms | 0 |
+| 500 | 22.8 | 5,658 | 174 ms | 206 ms | 4,379 ms | 0 |
+
+> **Zero errors at all concurrency levels.** vLLM's continuous batching absorbs extreme load gracefully. Higher TPS here (~5,650) vs. the fine-grained sweep (~2,917) is because a perpetually-full queue lets vLLM pack every decode step to maximum batch size, roughly doubling throughput compared to bursty low-request tests.
+
+### Quality evaluation
+
+| Dataset | Metric | Score | Samples |
+|---|---|---|---|
+| MMLU | Accuracy | 100% | 10 |
+| GSM8K | Exact Match | 50% | 8 |
+| HumanEval | pass@1 | 100% | 5 |
 
 ---
 
