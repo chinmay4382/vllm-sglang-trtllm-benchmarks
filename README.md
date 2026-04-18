@@ -85,6 +85,26 @@ streamlit run dashboard/app.py
 
 ---
 
+## Benchmark results — Qwen/Qwen2.5-7B-Instruct (RTX 5090)
+
+| Concurrency | RPS | TPS | TTFT avg | Latency p95 |
+|---|---|---|---|---|
+| 1 | 0.41 | 101 | 25 ms | 2,468 ms |
+| 5 | 2.00 | 496 | 43 ms | 2,512 ms |
+| 10 | 3.70 | 917 | 53 ms | 2,710 ms |
+| 20 | 5.93 | 1,474 | 85 ms | 2,881 ms |
+| 50 | 11.71 | 2,907 | 160 ms | 4,263 ms |
+
+**Quality evaluation:**
+
+| Dataset | Metric | Score |
+|---|---|---|
+| MMLU | Accuracy | 100% |
+| GSM8K | Exact Match | 50% |
+| HumanEval | pass@1 | 100% |
+
+---
+
 ## Metrics reference
 
 | Metric | Formula | Unit |
