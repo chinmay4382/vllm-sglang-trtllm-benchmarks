@@ -152,6 +152,22 @@ Three test suites were run against a live vLLM server with `--attention-backend 
 
 > **Zero errors at all concurrency levels.** vLLM's continuous batching absorbs extreme load gracefully. Higher TPS here (~5,650) vs. the fine-grained sweep (~2,917) is because a perpetually-full queue lets vLLM pack every decode step to maximum batch size, roughly doubling throughput compared to bursty low-request tests.
 
+### Extreme overload — finding the breaking point (concurrency 1,000 → 5,000, 200 req each)
+
+| Concurrency | RPS | TPS | TTFT avg | TTFT p95 | Latency p95 | Errors |
+|---|---|---|---|---|---|---|
+| 1,000 | 22.2 | 5,512 | 2,538 ms | 4,788 ms | 8,970 ms | 0 |
+| 2,000 | 22.1 | 5,485 | 2,542 ms | 4,778 ms | 8,956 ms | 0 |
+| 3,000 | 22.1 | 5,491 | 2,555 ms | 4,799 ms | 8,995 ms | 0 |
+| 5,000 | 22.1 | 5,491 | 2,548 ms | 4,800 ms | 9,013 ms | 0 |
+
+> **vLLM never hard-fails — it queues everything.** The real breaking point is latency, not errors:
+> - TTFT explodes from **~174 ms** (c=500) → **~2,538 ms** (c=1,000) — a **14× jump**
+> - Latency p95 doubles from **~4.4 s** → **~9.0 s** between c=500 and c=1,000
+> - TPS stays flat at ~5,500 regardless of queue depth — the GPU is the ceiling
+>
+> **Practical SLA boundary: c ≈ 500–1,000.** If your target is TTFT < 500 ms, the system degrades well before requests are dropped. To enforce hard limits, set `--max-num-seqs` on the vLLM server or use a client-side timeout.
+
 ### Quality evaluation
 
 | Dataset | Metric | Score | Samples |
