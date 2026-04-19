@@ -13,6 +13,9 @@ plotly>=5.22.0
 # vLLM (install separately; GPU required)
 # vllm>=0.5.0
 
+# SGLang
+sglang[all]>=0.4.0
+
 # GuideLLM (optional; falls back to direct API evaluator)
 # guidellm>=0.1.0
 
