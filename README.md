@@ -7,17 +7,31 @@ evaluation (MMLU, GSM8K, HumanEval) with a Streamlit dashboard.
 
 ## Dashboard
 
-### Overview — KPIs & Performance Charts
-![Dashboard Overview](docs/images/dashboard_overview.png)
+### vLLM — Overview & KPIs
+![vLLM Dashboard Overview](docs/images/dashboard_overview.png)
 
-### Throughput / Latency Tradeoff
-![Tradeoff Scatter](docs/images/dashboard_charts.png)
+### vLLM — Throughput / Latency Tradeoff
+![vLLM Tradeoff Scatter](docs/images/dashboard_charts.png)
 
-### Quality Metrics
-![Quality Metrics](docs/images/dashboard_scatter.png)
+### vLLM — Quality Metrics
+![vLLM Quality Metrics](docs/images/dashboard_scatter.png)
 
-> **Benchmark results above** — `Qwen/Qwen2.5-7B-Instruct` on RTX 5090.
+> **vLLM results** — `Qwen/Qwen2.5-7B-Instruct` on RTX 5090.
 > GPU ceiling: **~5,650 TPS** (queue-saturated). Practical saturation: **~2,917 TPS** at c=64. Quality: MMLU **100%**, HumanEval **100%**, GSM8K **50%**.
+
+---
+
+### SGLang — Overview & KPIs
+![SGLang Dashboard Overview](docs/images/sglang_dashboard_overview.png)
+
+### SGLang — Throughput / Latency Tradeoff
+![SGLang Tradeoff Scatter](docs/images/sglang_dashboard_charts.png)
+
+### SGLang — Quality Metrics
+![SGLang Quality Metrics](docs/images/sglang_dashboard_scatter.png)
+
+> **SGLang results** — `Qwen/Qwen2.5-7B-Instruct` on RTX 5090.
+> GPU ceiling: **~5,640 TPS** (queue-saturated). Practical saturation: **~2,887 TPS** at c=64. Quality: MMLU **100%**, HumanEval **100%**, GSM8K **62.5%**.
 
 ---
 
