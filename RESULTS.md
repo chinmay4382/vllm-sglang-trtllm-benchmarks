@@ -135,3 +135,35 @@ trtllm-serve serve <model> \
   --max_batch_size 64 \
   --max_num_tokens 4096
 ```
+
+---
+
+## Analysis — TRT-LLM vs vLLM vs SGLang
+
+### Why TRT-LLM wins at practical concurrency (c=1–64)
+
+At c=64, TRT-LLM delivers **4,108 TPS** — 41% higher than vLLM (2,917) and 42% higher than SGLang (2,887). This comes from what the TRT engine actually does at startup:
+
+- **Compiled CUDA kernels**: the model is compiled into a TensorRT binary with fused layers for the exact target hardware (RTX 5090, SM 12.0). Every matrix multiply, attention block, and MLP is a single optimized kernel. vLLM and SGLang run through PyTorch's runtime op dispatch — each operation involves kernel selection, tensor bookkeeping, and Python overhead per step.
+- **CUDA graph capture**: execution graphs are pre-recorded for every batch size at warmup (1, 2, 4... 64). At inference time, replaying a captured graph eliminates all CPU-side scheduling overhead entirely.
+- **FlashInfer sampling**: token sampling at each decode step uses FlashInfer's optimized CUDA kernels rather than standard PyTorch sampling.
+- **Fused MLP**: the transformer's feed-forward layers are merged into a single kernel (`use_fused_mlp=True`), halving memory round-trips on the largest compute block in the model.
+
+In short, TRT-LLM does in one kernel what vLLM does in three or four — at practical serving concurrency, this difference dominates.
+
+### Why vLLM and SGLang win at extreme overload (c=100+)
+
+Once the request queue is permanently saturated, vLLM hits **~5,650 TPS** and SGLang **~5,640 TPS** while TRT-LLM plateaus at **~4,220 TPS**. The gap comes from batching strategy:
+
+- **TRT-LLM uses static batch sizes**: the engine is compiled for fixed sizes (1, 2, 4... 64, 128). When 300 requests are queued, it still processes them in groups of 128, 128, 44 — padding waste grows as the queue depth exceeds the largest compiled batch size.
+- **vLLM and SGLang use continuous batching**: every decode step, the scheduler inspects the full queue and packs exactly as many sequences as the GPU can hold. With hundreds of requests waiting, every single decode step runs at 100% GPU utilization with no padding overhead.
+- **Prefill/decode interleaving**: vLLM and SGLang dynamically mix prefill (processing new input tokens) and decode (generating output tokens) within the same batch. TRT-LLM's static compiled engine has less runtime flexibility to interleave these phases.
+
+### When to use each
+
+| Use case | Best choice | Reason |
+|---|---|---|
+| Production serving, TTFT SLA < 200 ms | **TRT-LLM** | Lowest latency and highest throughput at c=1–64 |
+| Batch processing, maximum raw throughput | **vLLM or SGLang** | Continuous batching saturates GPU better at c=100+ |
+| Simplest deployment, any GPU | **vLLM or SGLang** | No engine compilation step, works out of the box |
+| Latency-critical, single-digit concurrency | **TRT-LLM** | TTFT 22 ms vs 25–33 ms for others |
