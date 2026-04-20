@@ -67,13 +67,11 @@
 
 ## Quality Evaluation
 
-| Dataset   | Metric      | vLLM  | SGLang | TRT-LLM |
-|-----------|-------------|-------|--------|---------|
-| MMLU      | Accuracy    | 100%  | 100%   | —       |
-| GSM8K     | Exact Match | 50%   | 62.5%  | —       |
-| HumanEval | pass@1      | 100%  | 100%   | —       |
-
-> TRT-LLM quality eval pending.
+| Dataset   | Metric      | vLLM  | SGLang | TRT-LLM   |
+|-----------|-------------|-------|--------|-----------|
+| MMLU      | Accuracy    | 100%  | 100%   | 100%      |
+| GSM8K     | Exact Match | 50%   | 62.5%  | **87.5%** |
+| HumanEval | pass@1      | 100%  | 100%   | 100%      |
 
 ---
 
