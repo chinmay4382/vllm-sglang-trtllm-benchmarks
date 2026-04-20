@@ -200,7 +200,7 @@ Three backends benchmarked: vLLM (`--attention-backend FLASHINFER`), SGLang, and
 | 20 | 5.32 | 1,322 | 154 ms | 12.2 ms |
 | 50 | 6.28 | 1,565 | 294 ms | 30.8 ms |
 
-> TRT-LLM underperforms vLLM/SGLang at higher concurrency because it is running the **PyTorch backend** (not a compiled TRT engine) and FlashInfer sampling is disabled. Both limitations stem from CUDA 12.8 not yet supporting Blackwell (SM 12.x); upgrading to CUDA ≥ 12.9 would unlock the full TRT engine path and FlashInfer.
+> TRT-LLM underperforms vLLM/SGLang at higher concurrency because it is running the **PyTorch backend** (not a compiled TRT engine) and FlashInfer sampling is disabled. GPU throughput ceiling: **~1,950 TPS**, saturation at **c=32**. Both limitations stem from CUDA 12.8 not supporting Blackwell (SM 12.x); upgrading to CUDA ≥ 12.9 would unlock the full TRT engine path and FlashInfer.
 
 ### Three-way comparison — baseline sweep
 
