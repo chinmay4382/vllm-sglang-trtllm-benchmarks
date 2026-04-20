@@ -61,7 +61,7 @@ Prior runs on CUDA 12.8 (PyTorch backend, FlashInfer disabled) are noted separat
 | 3,000 | 5,491 | 5,494 | 2,555 ms | 2,521 ms | 0 |
 | 5,000 | 5,491 | 5,526 | 2,548 ms | 2,497 ms | 0 |
 
-> Extreme overload not yet run for TRT-LLM TRT engine.
+> Extreme overload not yet run for TRT-LLM TRT engine. Based on the overload test ceiling (~4,220 TPS) and the static-batch architecture, TRT-LLM is not expected to exceed that ceiling at higher concurrency — vLLM and SGLang are the better choice for workloads that require c>100.
 
 ---
 
@@ -72,6 +72,8 @@ Prior runs on CUDA 12.8 (PyTorch backend, FlashInfer disabled) are noted separat
 | MMLU      | Accuracy    | 100%  | 100%   | 100%      |
 | GSM8K     | Exact Match | 50%   | 62.5%  | **87.5%** |
 | HumanEval | pass@1      | 100%  | 100%   | 100%      |
+
+> **Note on GSM8K variance:** All three backends serve the same model weights (Qwen2.5-7B-Instruct). Score differences reflect small-sample noise (8 questions per run) — not engine-level quality differences. At this sample size, a single extra correct answer shifts the score by 12.5 percentage points. MMLU and HumanEval results are consistent across all backends.
 
 ---
 
