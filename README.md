@@ -1,7 +1,8 @@
-# vLLM + GuideLLM Benchmarking Platform
+# vLLM + SGLang + TRT-LLM Benchmarking Platform
 
 End-to-end LLM benchmarking: serving performance (RPS, TPS, TTFT, ITL) + quality
-evaluation (MMLU, GSM8K, HumanEval) with a Streamlit dashboard.
+evaluation (MMLU, GSM8K, HumanEval) with a Streamlit dashboard. Supports **vLLM**,
+**SGLang**, and **TensorRT-LLM** — any OpenAI-compatible endpoint works.
 
 ---
 
@@ -91,6 +92,66 @@ vllm serve meta-llama/Llama-3.1-70B-Instruct \
   --port 8000
 ```
 
+### 2c. Run against a live SGLang server
+
+**Start SGLang:**
+
+```bash
+python -m sglang.launch_server \
+  --model-path Qwen/Qwen2.5-7B-Instruct \
+  --host 0.0.0.0 --port 8000
+```
+
+### 2d. Run against TensorRT-LLM
+
+**Prerequisites (one-time system setup):**
+
+```bash
+# 1. Install TRT-LLM and dependencies
+pip install tensorrt-llm --extra-index-url https://pypi.nvidia.com
+pip install hf_transfer
+
+# 2. Install OpenMPI (required by mpi4py)
+apt-get install -y libopenmpi-dev openmpi-bin
+
+# 3. Install CUDA 13 cuBLAS (TRT-LLM 1.2.0 is built against CUDA 13 cuBLAS,
+#    even if your CUDA toolkit is 12.x)
+apt-get install -y libcublas-13-0
+
+# 4. Restore the /usr/local/cuda symlink to your toolkit (apt may redirect it)
+update-alternatives --set cuda /usr/local/cuda-12.8
+```
+
+**Create an extra options file to disable FlashInfer sampling** (required on
+Blackwell / SM 12.x with CUDA < 12.9, since nvcc 12.8 cannot compile
+`compute_120f` kernels):
+
+```bash
+cat > /tmp/trtllm_extra.yaml << 'EOF'
+disable_flashinfer_sampling: true
+EOF
+```
+
+**Start TRT-LLM server:**
+
+```bash
+export LD_LIBRARY_PATH=/usr/local/cuda-13.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
+
+trtllm-serve serve Qwen/Qwen2.5-7B-Instruct \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --max_batch_size 64 \
+  --max_num_tokens 4096 \
+  --extra_llm_api_options /tmp/trtllm_extra.yaml
+```
+
+On first run, TRT-LLM downloads the model, loads it via the PyTorch backend,
+and runs CUDA graph warmup for batch sizes 1–64. Wait for:
+`INFO: Application startup complete.`
+
+> **Note:** Verify the model name TRT-LLM registered before running benchmarks:
+> `curl http://localhost:8000/v1/models`
+
 **Run benchmarks:**
 
 ```bash
@@ -127,9 +188,37 @@ streamlit run dashboard/app.py \
 
 ## Benchmark results — Qwen/Qwen2.5-7B-Instruct (RTX 5090)
 
-Three test suites were run against a live vLLM server with `--attention-backend FLASHINFER`.
+Three backends benchmarked: vLLM (`--attention-backend FLASHINFER`), SGLang, and TRT-LLM (PyTorch backend, FlashInfer sampling disabled due to CUDA 12.8 / Blackwell limitation).
 
-### Baseline sweep (concurrency 1 → 50, 50 req each)
+### TRT-LLM baseline sweep (concurrency 1 → 50, 50 req each)
+
+| Concurrency | RPS | TPS | TTFT avg | ITL avg |
+|---|---|---|---|---|
+| 1  | 0.40 | 99   | 38 ms  | 10.0 ms |
+| 5  | 1.87 | 466  | 71 ms  | 10.5 ms |
+| 10 | 3.40 | 847  | 96 ms  | 11.5 ms |
+| 20 | 5.32 | 1,322 | 154 ms | 12.2 ms |
+| 50 | 6.28 | 1,565 | 294 ms | 30.8 ms |
+
+> TRT-LLM underperforms vLLM/SGLang at higher concurrency because it is running the **PyTorch backend** (not a compiled TRT engine) and FlashInfer sampling is disabled. Both limitations stem from CUDA 12.8 not yet supporting Blackwell (SM 12.x); upgrading to CUDA ≥ 12.9 would unlock the full TRT engine path and FlashInfer.
+
+### Three-way comparison — baseline sweep
+
+| Concurrency | vLLM TPS | SGLang TPS | TRT-LLM TPS | vLLM TTFT | SGLang TTFT | TRT-LLM TTFT |
+|---|---|---|---|---|---|---|
+| 1  | 101   | 102   | 99    | 25 ms  | 33 ms  | 38 ms  |
+| 5  | 496   | 479   | 466   | 43 ms  | 118 ms | 71 ms  |
+| 10 | 917   | 913   | 847   | 53 ms  | 52 ms  | 96 ms  |
+| 20 | 1,474 | 1,479 | 1,322 | 85 ms  | 63 ms  | 154 ms |
+| 50 | 2,907 | 2,576 | 1,565 | 160 ms | 186 ms | 294 ms |
+
+See [`RESULTS.md`](RESULTS.md) for the full three-way comparison across all test suites.
+
+---
+
+### vLLM detailed results (three test suites)
+
+### vLLM — Baseline sweep (concurrency 1 → 50, 50 req each)
 
 | Concurrency | RPS | TPS | TTFT avg | TTFT p95 | ITL avg | Latency p95 |
 |---|---|---|---|---|---|---|
@@ -139,7 +228,7 @@ Three test suites were run against a live vLLM server with `--attention-backend 
 | 20 | 5.93 | 1,474 | 85 ms | 109 ms | 11.1 ms | 2,881 ms |
 | 50 | 11.71 | 2,907 | 160 ms | 170 ms | 16.6 ms | 4,263 ms |
 
-### Fine-grained sweep — finding the saturation point (concurrency 1 → 128, 50 req each)
+### vLLM — Fine-grained sweep — finding the saturation point (concurrency 1 → 128, 50 req each)
 
 | Concurrency | RPS | TPS | TTFT avg | TTFT p95 | Latency p95 |
 |---|---|---|---|---|---|
@@ -154,7 +243,7 @@ Three test suites were run against a live vLLM server with `--attention-backend 
 
 > **Saturation point: c=64 (~2,917 TPS).** Adding more users yields no throughput gain — the GPU is fully utilised. Marginal TPS actually regresses at c=128 as queue overhead grows.
 
-### Overload test — vLLM robustness under extreme load (concurrency 100 → 500, 100 req each)
+### vLLM — Overload test (concurrency 100 → 500, 100 req each)
 
 | Concurrency | RPS | TPS | TTFT avg | TTFT p95 | Latency p95 | Errors |
 |---|---|---|---|---|---|---|
@@ -166,7 +255,7 @@ Three test suites were run against a live vLLM server with `--attention-backend 
 
 > **Zero errors at all concurrency levels.** vLLM's continuous batching absorbs extreme load gracefully. Higher TPS here (~5,650) vs. the fine-grained sweep (~2,917) is because a perpetually-full queue lets vLLM pack every decode step to maximum batch size, roughly doubling throughput compared to bursty low-request tests.
 
-### Extreme overload — finding the breaking point (concurrency 1,000 → 5,000, 200 req each)
+### vLLM — Extreme overload (concurrency 1,000 → 5,000, 200 req each)
 
 | Concurrency | RPS | TPS | TTFT avg | TTFT p95 | Latency p95 | Errors |
 |---|---|---|---|---|---|---|
@@ -184,11 +273,13 @@ Three test suites were run against a live vLLM server with `--attention-backend 
 
 ### Quality evaluation
 
-| Dataset | Metric | Score | Samples |
-|---|---|---|---|
-| MMLU | Accuracy | 100% | 10 |
-| GSM8K | Exact Match | 50% | 8 |
-| HumanEval | pass@1 | 100% | 5 |
+| Dataset | Metric | vLLM | SGLang | TRT-LLM |
+|---|---|---|---|---|
+| MMLU | Accuracy | 100% | 100% | — |
+| GSM8K | Exact Match | 50% | 62.5% | — |
+| HumanEval | pass@1 | 100% | 100% | — |
+
+> TRT-LLM quality eval pending (benchmark ran with `--no-eval`).
 
 ---
 
