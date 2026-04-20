@@ -104,35 +104,21 @@ python -m sglang.launch_server \
 
 ### 2d. Run against TensorRT-LLM
 
-**Prerequisites (one-time system setup):**
+**Prerequisites (one-time system setup — requires CUDA 12.9+):**
 
 ```bash
 # 1. Install TRT-LLM and dependencies
 pip install tensorrt-llm --extra-index-url https://pypi.nvidia.com
 pip install hf_transfer
 
-# 2. Install OpenMPI (required by mpi4py)
-apt-get install -y libopenmpi-dev openmpi-bin
+# 2. Install OpenMPI (required by mpi4py) and CUDA 13 cuBLAS
+apt-get install -y libopenmpi-dev openmpi-bin libcublas-13-0 cuda-toolkit-12-9
 
-# 3. Install CUDA 13 cuBLAS (TRT-LLM 1.2.0 is built against CUDA 13 cuBLAS,
-#    even if your CUDA toolkit is 12.x)
-apt-get install -y libcublas-13-0
-
-# 4. Restore the /usr/local/cuda symlink to your toolkit (apt may redirect it)
-update-alternatives --set cuda /usr/local/cuda-12.8
+# 3. Point the /usr/local/cuda symlink at your toolkit
+update-alternatives --set cuda /usr/local/cuda-12.9
 ```
 
-**Create an extra options file to disable FlashInfer sampling** (required on
-Blackwell / SM 12.x with CUDA < 12.9, since nvcc 12.8 cannot compile
-`compute_120f` kernels):
-
-```bash
-cat > /tmp/trtllm_extra.yaml << 'EOF'
-disable_flashinfer_sampling: true
-EOF
-```
-
-**Start TRT-LLM server:**
+**Start TRT-LLM server (TRT engine with FlashInfer):**
 
 ```bash
 export LD_LIBRARY_PATH=/usr/local/cuda-13.0/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
@@ -140,17 +126,18 @@ export LD_LIBRARY_PATH=/usr/local/cuda-13.0/targets/x86_64-linux/lib:$LD_LIBRARY
 trtllm-serve serve Qwen/Qwen2.5-7B-Instruct \
   --host 0.0.0.0 \
   --port 8000 \
+  --backend tensorrt \
   --max_batch_size 64 \
-  --max_num_tokens 4096 \
-  --extra_llm_api_options /tmp/trtllm_extra.yaml
+  --max_num_tokens 4096
 ```
 
-On first run, TRT-LLM downloads the model, loads it via the PyTorch backend,
-and runs CUDA graph warmup for batch sizes 1–64. Wait for:
+On first run, TRT-LLM compiles a TensorRT engine for your GPU (~5 min), then
+runs CUDA graph warmup for batch sizes 1–64. Wait for:
 `INFO: Application startup complete.`
 
-> **Note:** Verify the model name TRT-LLM registered before running benchmarks:
-> `curl http://localhost:8000/v1/models`
+> **Note on CUDA < 12.9 / Blackwell:** If you are on CUDA 12.8, drop `--backend tensorrt` and add `--extra_llm_api_options /tmp/trtllm_extra.yaml` with `disable_flashinfer_sampling: true`. This runs the PyTorch backend at reduced throughput. See `RESULTS.md` for the performance difference.
+
+> **Verify model name before benchmarking:** `curl http://localhost:8000/v1/models`
 
 **Run benchmarks:**
 
@@ -188,29 +175,19 @@ streamlit run dashboard/app.py \
 
 ## Benchmark results — Qwen/Qwen2.5-7B-Instruct (RTX 5090)
 
-Three backends benchmarked: vLLM (`--attention-backend FLASHINFER`), SGLang, and TRT-LLM (PyTorch backend, FlashInfer sampling disabled due to CUDA 12.8 / Blackwell limitation).
+Three backends benchmarked: vLLM (`--attention-backend FLASHINFER`), SGLang, and TRT-LLM (`--backend tensorrt`, CUDA 12.9, FlashInfer enabled).
 
-### TRT-LLM baseline sweep (concurrency 1 → 50, 50 req each)
-
-| Concurrency | RPS | TPS | TTFT avg | ITL avg |
-|---|---|---|---|---|
-| 1  | 0.40 | 99   | 38 ms  | 10.0 ms |
-| 5  | 1.87 | 466  | 71 ms  | 10.5 ms |
-| 10 | 3.40 | 847  | 96 ms  | 11.5 ms |
-| 20 | 5.32 | 1,322 | 154 ms | 12.2 ms |
-| 50 | 6.28 | 1,565 | 294 ms | 30.8 ms |
-
-> TRT-LLM underperforms vLLM/SGLang at higher concurrency because it is running the **PyTorch backend** (not a compiled TRT engine) and FlashInfer sampling is disabled. GPU throughput ceiling: **~1,950 TPS**, saturation at **c=32**. Both limitations stem from CUDA 12.8 not supporting Blackwell (SM 12.x); upgrading to CUDA ≥ 12.9 would unlock the full TRT engine path and FlashInfer.
-
-### Three-way comparison — baseline sweep
+### Three-way comparison — baseline sweep (concurrency 1 → 50, 50 req each)
 
 | Concurrency | vLLM TPS | SGLang TPS | TRT-LLM TPS | vLLM TTFT | SGLang TTFT | TRT-LLM TTFT |
 |---|---|---|---|---|---|---|
-| 1  | 101   | 102   | 99    | 25 ms  | 33 ms  | 38 ms  |
-| 5  | 496   | 479   | 466   | 43 ms  | 118 ms | 71 ms  |
-| 10 | 917   | 913   | 847   | 53 ms  | 52 ms  | 96 ms  |
-| 20 | 1,474 | 1,479 | 1,322 | 85 ms  | 63 ms  | 154 ms |
-| 50 | 2,907 | 2,576 | 1,565 | 160 ms | 186 ms | 294 ms |
+| 1  | 101   | 102   | 93    | 25 ms  | 33 ms  | 22 ms  |
+| 5  | 496   | 479   | 458   | 43 ms  | 118 ms | 33 ms  |
+| 10 | 917   | 913   | 896   | 53 ms  | 52 ms  | 48 ms  |
+| 20 | 1,474 | 1,479 | 1,477 | 85 ms  | 63 ms  | 83 ms  |
+| 50 | 2,907 | 2,576 | 4,063 | 160 ms | 186 ms | 191 ms |
+
+> TRT-LLM pulls ahead at c=50 (**4,063 TPS** vs vLLM 2,907, SGLang 2,576) due to compiled CUDA kernels, CUDA graph capture, and fused MLP layers. At lower concurrency (c=1), TRT-LLM also delivers the lowest TTFT (22 ms).
 
 See [`RESULTS.md`](RESULTS.md) for the full three-way comparison across all test suites.
 
