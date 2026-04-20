@@ -23,32 +23,32 @@
 
 ## Fine-grained Sweep — Saturation Point (concurrency 1 → 128, 50 req each)
 
-| Concurrency | vLLM TPS | SGLang TPS | vLLM TTFT avg | SGLang TTFT avg |
-|---|---|---|---|---|
-| 1   | 101   | 102   | 24 ms  | 24 ms  |
-| 2   | 201   | 200   | 30 ms  | 30 ms  |
-| 4   | 383   | 384   | 39 ms  | 34 ms  |
-| 8   | 708   | 704   | 48 ms  | 43 ms  |
-| 16  | 1,169 | 1,144 | 72 ms  | 70 ms  |
-| 32  | 2,158 | 2,069 | 103 ms | 87 ms  |
-| **64**  | **2,917** | **2,887** | **146 ms** | **126 ms** |
-| 128 | 2,882 | 2,836 | 185 ms | 195 ms |
+| Concurrency | vLLM TPS | SGLang TPS | TRT-LLM TPS | vLLM TTFT avg | SGLang TTFT avg | TRT-LLM TTFT avg |
+|---|---|---|---|---|---|---|
+| 1   | 101   | 102   | 99    | 24 ms  | 24 ms  | 38 ms  |
+| 2   | 201   | 200   | 193   | 30 ms  | 30 ms  | 45 ms  |
+| 4   | 383   | 384   | 364   | 39 ms  | 34 ms  | 51 ms  |
+| 8   | 708   | 704   | 657   | 48 ms  | 43 ms  | 75 ms  |
+| 16  | 1,169 | 1,144 | 1,052 | 72 ms  | 70 ms  | 132 ms |
+| **32**  | 2,158 | 2,069 | **1,742** | 103 ms | 87 ms  | **199 ms** |
+| 64  | **2,917** | **2,887** | 1,649 | **146 ms** | **126 ms** | 281 ms |
+| 128 | 2,882 | 2,836 | 1,980 | 185 ms | 195 ms | 334 ms |
 
-> Saturation point: **c=64** for both vLLM and SGLang (~2,900 TPS). TRT-LLM fine-grained sweep not yet run.
+> Saturation points: **c=64** for vLLM and SGLang (~2,900 TPS), **c=32** for TRT-LLM (~1,742 TPS, PyTorch backend without FlashInfer).
 
 ---
 
 ## Overload Test (concurrency 100 → 500, 100 req each)
 
-| Concurrency | vLLM TPS | SGLang TPS | vLLM TTFT avg | SGLang TTFT avg | Errors |
-|---|---|---|---|---|---|
-| 100 | 5,550 | 5,638 | 264 ms | 188 ms | 0 |
-| 150 | 5,590 | 5,639 | 249 ms | 223 ms | 0 |
-| 200 | 5,529 | 5,644 | 244 ms | 182 ms | 0 |
-| 300 | 5,584 | 5,636 | 227 ms | 186 ms | 0 |
-| 500 | 5,658 | 5,613 | 174 ms | 197 ms | 0 |
+| Concurrency | vLLM TPS | SGLang TPS | TRT-LLM TPS | vLLM TTFT avg | SGLang TTFT avg | TRT-LLM TTFT avg | Errors |
+|---|---|---|---|---|---|---|---|
+| 100 | 5,550 | 5,638 | 1,943 | 264 ms | 188 ms | 2,598 ms | 0 |
+| 150 | 5,590 | 5,639 | 1,988 | 249 ms | 223 ms | 2,412 ms | 0 |
+| 200 | 5,529 | 5,644 | 1,912 | 244 ms | 182 ms | 2,704 ms | 0 |
+| 300 | 5,584 | 5,636 | 1,892 | 227 ms | 186 ms | 2,654 ms | 0 |
+| 500 | 5,658 | 5,613 | 1,927 | 174 ms | 197 ms | 2,495 ms | 0 |
 
-> GPU ceiling: ~**5,600 TPS** for both vLLM and SGLang. Zero errors at all levels.
+> GPU ceiling: ~**5,600 TPS** for vLLM and SGLang; ~**1,950 TPS** for TRT-LLM (PyTorch backend). TRT-LLM TTFT jumps to ~2.5 s at c=100 (SLA already broken), whereas vLLM/SGLang stay under 300 ms. Zero errors across all backends at all levels.
 
 ---
 
@@ -77,15 +77,16 @@
 
 ## Summary
 
-| Metric                          | vLLM        | SGLang      | TRT-LLM (PyTorch backend) |
-|---------------------------------|-------------|-------------|--------------------------|
-| TPS @ c=1                       | 101         | 102         | 99                        |
-| TPS @ c=50                      | 2,907       | 2,576       | 1,565                     |
-| GPU throughput ceiling          | ~5,650 TPS  | ~5,640 TPS  | not measured              |
-| Saturation point (latency-safe) | ~2,917 @ c=64 | ~2,887 @ c=64 | not measured            |
-| TTFT avg @ c=1                  | 25 ms       | 33 ms       | 38 ms                     |
-| TTFT avg @ c=50                 | 160 ms      | 186 ms      | 294 ms                    |
-| Zero-error tolerance            | c=5,000     | c=5,000     | not measured              |
+| Metric                          | vLLM          | SGLang        | TRT-LLM (PyTorch backend) |
+|---------------------------------|---------------|---------------|--------------------------|
+| TPS @ c=1                       | 101           | 102           | 99                        |
+| TPS @ c=50                      | 2,907         | 2,576         | 1,565                     |
+| GPU throughput ceiling          | ~5,650 TPS    | ~5,640 TPS    | ~1,950 TPS                |
+| Saturation point (latency-safe) | ~2,917 @ c=64 | ~2,887 @ c=64 | ~1,742 @ c=32             |
+| TTFT avg @ c=1                  | 25 ms         | 33 ms         | 38 ms                     |
+| TTFT avg @ c=50                 | 160 ms        | 186 ms        | 294 ms                    |
+| SLA breaks (TTFT > 500 ms) at   | c≈1,000       | c≈1,000       | c≈50                      |
+| Zero-error tolerance            | c=5,000       | c=5,000       | c=500 (tested)            |
 
 **vLLM and SGLang** perform near-identically across all suites (differences within ~1–2% noise margin).
 **TRT-LLM** matches at c=1 but falls behind at higher concurrency due to running the PyTorch backend
