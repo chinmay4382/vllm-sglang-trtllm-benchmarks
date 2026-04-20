@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-End-to-end LLM benchmarking platform that measures serving performance (RPS, TPS, TTFT, ITL) and quality evaluation (MMLU, GSM8K, HumanEval) for vLLM and SGLang inference servers, with a Streamlit visualization dashboard.
+End-to-end LLM benchmarking platform that measures serving performance (RPS, TPS, TTFT, ITL) and quality evaluation (MMLU, GSM8K, HumanEval) for both **vLLM** and **SGLang** inference servers, with a Streamlit visualization dashboard. Both backends expose an OpenAI-compatible API so the same benchmark harness targets either without modification. Benchmark results (see `RESULTS.md`) show both backends perform near-identically at the GPU throughput ceiling (~5,600 TPS on RTX 5090).
 
 ## Setup
 
@@ -52,11 +52,19 @@ streamlit run dashboard/app.py \
   --server.enableXsrfProtection false
 ```
 
-**Start vLLM server (examples):**
+**Start vLLM server:**
 ```bash
 vllm serve Qwen/Qwen2.5-7B-Instruct --host 0.0.0.0 --port 8000 --attention-backend FLASHINFER
 vllm serve meta-llama/Llama-3.1-70B-Instruct --tensor-parallel-size 4 --port 8000
 ```
+
+**Start SGLang server:**
+```bash
+python -m sglang.launch_server \
+  --model-path Qwen/Qwen2.5-7B-Instruct \
+  --host 0.0.0.0 --port 8000
+```
+SGLang also exposes an OpenAI-compatible endpoint; point `--base-url` at it the same way.
 
 ## Architecture
 
